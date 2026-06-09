@@ -15,6 +15,7 @@ formats supported by MarkItDown.
 
 - Choose one or more files with a normal file picker
 - Convert files to `.md` next to the original file
+- Use Research Paper mode for cleaner multi-column PDF paper conversion
 - Optionally write all outputs to a selected folder
 - See conversion progress and errors in the app window
 - Package a Windows build with GitHub Actions and PyInstaller
@@ -30,7 +31,22 @@ After downloading:
 2. Run `MarkItDown Desktop.exe`.
 3. Click `Choose Files`.
 4. Select documents to convert.
-5. Click `Convert`.
+5. Select `Research paper PDFs (Docling)` for academic PDF papers, if needed.
+6. Click `Convert`.
+
+## Conversion Modes
+
+MarkItDown Desktop has two conversion modes:
+
+- `General documents (MarkItDown)`: Uses Microsoft MarkItDown for all supported
+  document formats.
+- `Research paper PDFs (Docling)`: Uses Docling for PDF files and
+  MarkItDown for non-PDF files. This mode is intended for academic papers
+  with multi-column layouts,
+  tables, figures, and reading-order issues.
+
+Docling is not perfect, but it is designed for structured document parsing
+and usually handles paper-style PDF layouts better than the default PDF path.
 
 ## Supported Files
 
@@ -97,12 +113,14 @@ git push origin v0.1.0
 
 The workflow uploads a zipped Windows app to the GitHub Release. The UI uses
 Python's standard-library Tkinter toolkit, so the main third-party license
-surface is MarkItDown and its conversion dependencies.
+surface is MarkItDown, Docling, and their conversion dependencies.
 
 ## Relationship To Microsoft MarkItDown
 
 This app is a desktop wrapper around the open-source
 [microsoft/markitdown](https://github.com/microsoft/markitdown) Python package.
+For the optional research-paper PDF mode, it also uses
+[Docling](https://github.com/docling-project/docling).
 It does not copy or vendor MarkItDown source code into this repository. The
 application depends on MarkItDown as a third-party package.
 

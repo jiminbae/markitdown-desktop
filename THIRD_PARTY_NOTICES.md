@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-This project depends on third-party open-source software. The most important
-upstream dependency is Microsoft MarkItDown.
+This project depends on third-party open-source software. The main upstream
+dependencies are Microsoft MarkItDown and Docling.
 
 ## Microsoft MarkItDown
 
@@ -40,10 +40,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE
 ```
 
+## Docling
+
+- Project: https://github.com/docling-project/docling
+- Package: `docling`
+- License: MIT License for the Docling codebase
+- Purpose: Research-paper PDF to Markdown conversion mode
+
+Docling and its dependencies are third-party projects. The Docling codebase is
+MIT licensed, but individual bundled models and transitive dependencies may have
+their own licenses and should be reviewed when preparing formal releases.
+
 ## Other Dependencies
 
-This app uses Python's standard-library Tkinter toolkit for the desktop
-UI.
+This app uses Python's standard-library Tkinter toolkit for the desktop UI.
 It also depends on the optional dependencies installed by `markitdown[all]`.
 Their licenses are distributed by their package metadata and should be reviewed
 when preparing formal releases.

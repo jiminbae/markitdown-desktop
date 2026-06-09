@@ -31,6 +31,7 @@ for package_name in (
     "youtube_transcript_api",
     "lxml",
     "PIL",
+    "docling",
 ):
     collected_datas, collected_binaries, collected_hiddenimports = collect_all(package_name)
     datas += collected_datas

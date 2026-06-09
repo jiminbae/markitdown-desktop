@@ -7,7 +7,21 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
-from .converter import ConversionJob, ConversionResult, build_jobs, convert_job
+from .converter import (
+    ConversionEngine,
+    ConversionJob,
+    ConversionResult,
+    build_jobs,
+    convert_job,
+)
+
+
+GENERAL_ENGINE_LABEL = "General documents (MarkItDown)"
+RESEARCH_ENGINE_LABEL = "Research paper PDFs (Docling)"
+ENGINE_OPTIONS = {
+    GENERAL_ENGINE_LABEL: ConversionEngine.GENERAL,
+    RESEARCH_ENGINE_LABEL: ConversionEngine.RESEARCH_PAPER,
+}
 
 
 class MarkItDownDesktop(tk.Tk):
@@ -20,6 +34,7 @@ class MarkItDownDesktop(tk.Tk):
         self._files: list[Path] = []
         self._selected_output_dir: Path | None = None
         self._use_output_dir = tk.BooleanVar(value=False)
+        self._engine = tk.StringVar(value=GENERAL_ENGINE_LABEL)
         self._messages: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker_thread: threading.Thread | None = None
 
@@ -114,6 +129,24 @@ class MarkItDownDesktop(tk.Tk):
             command=self.start_conversion,
         )
         self._convert_button.pack(side=tk.RIGHT)
+
+        engine = ttk.Frame(root)
+        engine.pack(fill=tk.X, pady=(0, 12))
+
+        ttk.Label(engine, text="Conversion mode", style="Section.TLabel").pack(side=tk.LEFT)
+        self._engine_selector = ttk.Combobox(
+            engine,
+            textvariable=self._engine,
+            values=list(ENGINE_OPTIONS),
+            state="readonly",
+            width=24,
+        )
+        self._engine_selector.pack(side=tk.LEFT, padx=(12, 12))
+        ttk.Label(
+            engine,
+            text="Use research-paper mode for multi-column PDF papers.",
+            style="Muted.TLabel",
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         output = ttk.Frame(root)
         output.pack(fill=tk.X, pady=(0, 16))
@@ -251,7 +284,7 @@ class MarkItDownDesktop(tk.Tk):
                 return
             output_directory = self._selected_output_dir
 
-        jobs = build_jobs(self._files, output_directory)
+        jobs = build_jobs(self._files, output_directory, self._selected_engine())
         self._set_busy(True)
         self._append_log(f"Starting {len(jobs)} conversion(s)")
         self._worker_thread = threading.Thread(
@@ -261,6 +294,9 @@ class MarkItDownDesktop(tk.Tk):
         )
         self._worker_thread.start()
         self.after(100, self._poll_messages)
+
+    def _selected_engine(self) -> ConversionEngine:
+        return ENGINE_OPTIONS.get(self._engine.get(), ConversionEngine.GENERAL)
 
     def _run_conversion(self, jobs: list[ConversionJob]) -> None:
         total = len(jobs)
@@ -302,6 +338,7 @@ class MarkItDownDesktop(tk.Tk):
         self._choose_button.configure(state=state)
         self._remove_button.configure(state=state)
         self._clear_button.configure(state=state)
+        self._engine_selector.configure(state="disabled" if busy else "readonly")
         self._output_toggle.configure(state=state)
         self._output_button.configure(
             state=tk.NORMAL if not busy and self._use_output_dir.get() else tk.DISABLED
