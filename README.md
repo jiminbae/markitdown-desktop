@@ -5,7 +5,7 @@ Unofficial desktop app for converting documents to Markdown with
 
 MarkItDown Desktop gives you a simple desktop interface for files such as
 PDF, DOCX, PPTX, XLSX, HTML, CSV, JSON, images, audio, ZIP files, and other
-formats supported by MarkItDown.
+formats supported by its conversion engines.
 
 > This project is not affiliated with, endorsed by, sponsored by, or maintained
 > by Microsoft. "Microsoft" and "MarkItDown" are referenced only to identify the
@@ -15,7 +15,8 @@ formats supported by MarkItDown.
 
 - Choose one or more files with a normal file picker
 - Convert files to `.md` next to the original file
-- Use Research Paper mode for cleaner multi-column PDF paper conversion
+- Use Auto mode to retry broken-looking PDFs with Docling
+- Choose MarkItDown or Docling manually when you want direct control
 - Optionally write all outputs to a selected folder
 - See conversion progress and errors in the app window
 - Package a Windows build with GitHub Actions and PyInstaller
@@ -31,28 +32,30 @@ After downloading:
 2. Run `MarkItDown Desktop.exe`.
 3. Click `Choose Files`.
 4. Select documents to convert.
-5. Select `Research paper PDFs (Docling)` for academic PDF papers, if needed.
+5. Keep `Auto (recommended)` for most files, or choose a specific engine.
 6. Click `Convert`.
 
 ## Conversion Modes
 
-MarkItDown Desktop has two conversion modes:
+MarkItDown Desktop has three conversion modes:
 
-- `General documents (MarkItDown)`: Uses Microsoft MarkItDown for all supported
-  document formats.
-- `Research paper PDFs (Docling)`: Uses Docling for PDF files and
-  MarkItDown for non-PDF files. This mode is intended for academic papers
-  with multi-column layouts,
-  tables, figures, and reading-order issues.
+- `Auto (recommended)`: Uses MarkItDown first. For PDF files, it checks the
+  Markdown for common extraction problems such as `(cid:)` artifacts, NUL
+  characters, excessive table-like lines, and long no-space text runs. If the
+  PDF looks broken, it retries with Docling. Non-PDF files stay on MarkItDown.
+- `MarkItDown`: Uses Microsoft MarkItDown directly for every file.
+- `Docling`: Tries Docling first for every file. If Docling cannot convert the
+  file, the app falls back to MarkItDown.
 
-Docling is not perfect, but it is designed for structured document parsing
-and usually handles paper-style PDF layouts better than the default PDF path.
+This keeps common files fast while still giving complex academic PDFs a better
+chance at readable Markdown.
 
 ## Supported Files
 
-MarkItDown Desktop delegates conversion to Microsoft MarkItDown, so format
-support depends on the installed MarkItDown package and its optional
-dependencies. The packaged app is configured to install `markitdown[all]`.
+MarkItDown Desktop uses Microsoft MarkItDown as the fast default engine and
+Docling as an optional structured document parser. Format support depends on
+those packages and their optional dependencies. The packaged app is configured
+to install `markitdown[all]` and `docling`.
 
 Common supported inputs include:
 
@@ -119,10 +122,10 @@ surface is MarkItDown, Docling, and their conversion dependencies.
 
 This app is a desktop wrapper around the open-source
 [microsoft/markitdown](https://github.com/microsoft/markitdown) Python package.
-For the optional research-paper PDF mode, it also uses
+For Auto fallback and the optional Docling mode, it also uses
 [Docling](https://github.com/docling-project/docling).
-It does not copy or vendor MarkItDown source code into this repository. The
-application depends on MarkItDown as a third-party package.
+It does not copy or vendor MarkItDown or Docling source code into this
+repository. The application depends on them as third-party packages.
 
 Microsoft MarkItDown is distributed under the MIT License with copyright held by
 Microsoft Corporation. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for

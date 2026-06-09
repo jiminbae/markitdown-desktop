@@ -16,11 +16,13 @@ from .converter import (
 )
 
 
-GENERAL_ENGINE_LABEL = "General documents (MarkItDown)"
-RESEARCH_ENGINE_LABEL = "Research paper PDFs (Docling)"
+AUTO_ENGINE_LABEL = "Auto (recommended)"
+MARKITDOWN_ENGINE_LABEL = "MarkItDown"
+DOCLING_ENGINE_LABEL = "Docling"
 ENGINE_OPTIONS = {
-    GENERAL_ENGINE_LABEL: ConversionEngine.GENERAL,
-    RESEARCH_ENGINE_LABEL: ConversionEngine.RESEARCH_PAPER,
+    AUTO_ENGINE_LABEL: ConversionEngine.AUTO,
+    MARKITDOWN_ENGINE_LABEL: ConversionEngine.MARKITDOWN,
+    DOCLING_ENGINE_LABEL: ConversionEngine.DOCLING,
 }
 
 
@@ -34,7 +36,7 @@ class MarkItDownDesktop(tk.Tk):
         self._files: list[Path] = []
         self._selected_output_dir: Path | None = None
         self._use_output_dir = tk.BooleanVar(value=False)
-        self._engine = tk.StringVar(value=GENERAL_ENGINE_LABEL)
+        self._engine = tk.StringVar(value=AUTO_ENGINE_LABEL)
         self._messages: queue.Queue[tuple[str, object]] = queue.Queue()
         self._worker_thread: threading.Thread | None = None
 
@@ -139,12 +141,12 @@ class MarkItDownDesktop(tk.Tk):
             textvariable=self._engine,
             values=list(ENGINE_OPTIONS),
             state="readonly",
-            width=24,
+            width=22,
         )
         self._engine_selector.pack(side=tk.LEFT, padx=(12, 12))
         ttk.Label(
             engine,
-            text="Use research-paper mode for multi-column PDF papers.",
+            text="Auto retries broken-looking PDFs with Docling and keeps other files fast.",
             style="Muted.TLabel",
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
@@ -296,7 +298,7 @@ class MarkItDownDesktop(tk.Tk):
         self.after(100, self._poll_messages)
 
     def _selected_engine(self) -> ConversionEngine:
-        return ENGINE_OPTIONS.get(self._engine.get(), ConversionEngine.GENERAL)
+        return ENGINE_OPTIONS.get(self._engine.get(), ConversionEngine.AUTO)
 
     def _run_conversion(self, jobs: list[ConversionJob]) -> None:
         total = len(jobs)
