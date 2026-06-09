@@ -105,7 +105,13 @@ def looks_like_broken_pdf_markdown(markdown: str) -> bool:
 def convert_auto(job: ConversionJob) -> tuple[str, str]:
     markdown = convert_with_markitdown(job.input_path)
     if is_pdf(job.input_path) and looks_like_broken_pdf_markdown(markdown):
-        return convert_with_docling(job.input_path), "Auto: Docling fallback"
+        try:
+            return convert_with_docling(job.input_path), "Auto: Docling fallback"
+        except Exception as exc:
+            return (
+                markdown,
+                f"Auto: MarkItDown; Docling fallback failed: {exc}",
+            )
     return markdown, "Auto: MarkItDown"
 
 

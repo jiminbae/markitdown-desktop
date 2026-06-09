@@ -89,6 +89,31 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("Auto: Docling fallback", result.message)
             docling.assert_called_once()
 
+    def test_auto_keeps_markitdown_when_docling_fallback_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = Path(temp_dir) / "paper.pdf"
+            output_path = Path(temp_dir) / "paper.md"
+            input_path.write_bytes(b"%PDF test")
+            broken = "\n".join(["| --- | --- |"] * 60 + ["(cid:32)"] * 5)
+
+            with (
+                patch(
+                    "markitdown_desktop.converter.convert_with_markitdown",
+                    return_value=broken,
+                ),
+                patch(
+                    "markitdown_desktop.converter.convert_with_docling",
+                    side_effect=RuntimeError("Input document paper.pdf is not valid."),
+                ) as docling,
+            ):
+                result = convert_job(ConversionJob(input_path, output_path))
+
+            self.assertTrue(result.succeeded)
+            self.assertEqual(output_path.read_text(encoding="utf-8"), broken)
+            self.assertIn("Auto: MarkItDown", result.message)
+            self.assertIn("Docling fallback failed", result.message)
+            docling.assert_called_once()
+
     def test_auto_uses_markitdown_for_non_pdf(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "slides.pptx"
