@@ -11,6 +11,8 @@ from markitdown_desktop.converter import (
     convert_job,
     default_output_path,
     extract_markdown,
+    better_markdown,
+    cleanup_pdf_text,
     looks_like_broken_pdf_markdown,
 )
 
@@ -65,6 +67,45 @@ class ConverterTests(unittest.TestCase):
             markitdown.assert_called_once()
             docling.assert_not_called()
 
+    def test_cleanup_pdf_text_repairs_common_line_breaks(self) -> None:
+        text = "high-\nfrequency\ncomponents\n\nNext paragraph"
+        self.assertEqual(
+            cleanup_pdf_text(text),
+            "highfrequency components\n\nNext paragraph",
+        )
+
+    def test_better_markdown_prefers_lower_penalty_candidate(self) -> None:
+        broken = "\n".join(["| --- | --- |"] * 60 + ["(cid:32)"] * 5)
+        repaired = "# Title\n\nThis is readable paper text."
+        self.assertTrue(better_markdown(repaired, broken))
+
+    def test_auto_uses_pdf_layout_repair_before_docling(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = Path(temp_dir) / "paper.pdf"
+            output_path = Path(temp_dir) / "paper.md"
+            input_path.write_bytes(b"%PDF test")
+            broken = "\n".join(["| --- | --- |"] * 60 + ["(cid:32)"] * 5)
+            repaired = "# Repaired paper\n\nReadable text."
+
+            with (
+                patch(
+                    "markitdown_desktop.converter.convert_with_markitdown",
+                    return_value=broken,
+                ),
+                patch(
+                    "markitdown_desktop.converter.convert_with_pdf_layout_repair",
+                    return_value=repaired,
+                ) as repair,
+                patch("markitdown_desktop.converter.convert_with_docling") as docling,
+            ):
+                result = convert_job(ConversionJob(input_path, output_path))
+
+            self.assertTrue(result.succeeded)
+            self.assertEqual(output_path.read_text(encoding="utf-8"), repaired)
+            self.assertIn("Auto: PDF layout repair", result.message)
+            repair.assert_called_once()
+            docling.assert_not_called()
+
     def test_auto_retries_broken_pdf_with_docling(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             input_path = Path(temp_dir) / "paper.pdf"
@@ -75,6 +116,10 @@ class ConverterTests(unittest.TestCase):
             with (
                 patch(
                     "markitdown_desktop.converter.convert_with_markitdown",
+                    return_value=broken,
+                ),
+                patch(
+                    "markitdown_desktop.converter.convert_with_pdf_layout_repair",
                     return_value=broken,
                 ),
                 patch(
@@ -100,6 +145,10 @@ class ConverterTests(unittest.TestCase):
                 patch(
                     "markitdown_desktop.converter.convert_with_markitdown",
                     return_value=broken,
+                ),
+                patch(
+                    "markitdown_desktop.converter.convert_with_pdf_layout_repair",
+                    side_effect=RuntimeError("repair failed"),
                 ),
                 patch(
                     "markitdown_desktop.converter.convert_with_docling",

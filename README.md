@@ -15,7 +15,7 @@ formats supported by its conversion engines.
 
 - Choose one or more files with a normal file picker
 - Convert files to `.md` next to the original file
-- Use Auto mode to retry broken-looking PDFs with Docling
+- Use Auto mode to repair broken-looking PDFs with pdfplumber or Docling
 - Choose MarkItDown or Docling manually when you want direct control
 - Optionally write all outputs to a selected folder
 - See conversion progress and errors in the app window
@@ -42,13 +42,15 @@ MarkItDown Desktop has three conversion modes:
 - `Auto (recommended)`: Uses MarkItDown first. For PDF files, it checks the
   Markdown for common extraction problems such as `(cid:)` artifacts, NUL
   characters, excessive table-like lines, and long no-space text runs. If the
-  PDF looks broken, it retries with Docling. Non-PDF files stay on MarkItDown.
+  PDF looks broken, it first tries a pdfplumber-based layout repair pass.
+  If that is not better or fails, it retries with Docling. Non-PDF files stay
+  on MarkItDown.
 - `MarkItDown`: Uses Microsoft MarkItDown directly for every file.
 - `Docling`: Tries Docling first for every file. If Docling cannot convert the
   file, the app falls back to MarkItDown.
 
-This keeps common files fast while still giving complex academic PDFs a better
-chance at readable Markdown.
+This keeps common files fast while giving complex academic PDFs multiple
+chances at readable Markdown.
 
 ## Supported Files
 
@@ -116,13 +118,15 @@ git push origin v0.1.0
 
 The workflow uploads a zipped Windows app to the GitHub Release. The UI uses
 Python's standard-library Tkinter toolkit, so the main third-party license
-surface is MarkItDown, Docling, and their conversion dependencies.
+surface is MarkItDown, pdfplumber, Docling, and their conversion
+dependencies.
 
 ## Relationship To Microsoft MarkItDown
 
 This app is a desktop wrapper around the open-source
 [microsoft/markitdown](https://github.com/microsoft/markitdown) Python package.
-For Auto fallback and the optional Docling mode, it also uses
+For Auto PDF repair and the optional Docling mode, it also uses
+[pdfplumber](https://github.com/jsvine/pdfplumber) and
 [Docling](https://github.com/docling-project/docling).
 It does not copy or vendor MarkItDown or Docling source code into this
 repository. The application depends on them as third-party packages.

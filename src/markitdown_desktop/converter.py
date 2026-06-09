@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import re
 
 
 class ConversionEngine(str, Enum):
@@ -83,35 +84,101 @@ def is_pdf(input_path: Path) -> bool:
     return input_path.suffix.lower() == ".pdf"
 
 
-def looks_like_broken_pdf_markdown(markdown: str) -> bool:
+def markdown_quality_penalty(markdown: str) -> int:
     lines = markdown.splitlines()
     if not markdown.strip():
-        return True
+        return 1_000_000
 
     line_count = max(len(lines), 1)
     pipe_lines = sum(1 for line in lines if "|" in line)
     long_no_space_lines = sum(1 for line in lines if len(line) > 60 and " " not in line)
+    table_ratio_penalty = int(200 * max(0, pipe_lines / line_count - 0.20))
 
-    return any(
+    return sum(
         (
-            "\x00" in markdown,
-            markdown.count("(cid:") >= 5,
-            long_no_space_lines >= 8,
-            pipe_lines >= 50 and pipe_lines / line_count > 0.20,
+            markdown.count("\x00") * 20,
+            markdown.count("(cid:") * 25,
+            long_no_space_lines * 8,
+            table_ratio_penalty,
         )
     )
+
+
+def looks_like_broken_pdf_markdown(markdown: str) -> bool:
+    return markdown_quality_penalty(markdown) >= 100
+
+
+def cleanup_pdf_text(text: str) -> str:
+    text = text.replace("\x00", "")
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+    text = re.sub(r"(?<!\n)\n(?!\n)(?=[a-z0-9,(])", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def extract_pdfplumber_text(page: object) -> str:
+    return page.extract_text(  # type: ignore[attr-defined]
+        x_tolerance=2,
+        x_tolerance_ratio=0.18,
+        y_tolerance=4,
+        layout=False,
+    ) or ""
+
+
+def convert_with_pdf_layout_repair(input_path: Path) -> str:
+    import pdfplumber
+
+    pages: list[str] = []
+    with pdfplumber.open(str(input_path)) as pdf:
+        for page_number, page in enumerate(pdf.pages):
+            width = float(page.width)
+            height = float(page.height)
+            split_x = width / 2
+            top = height * 0.08
+            bottom = height * 0.94
+            page_parts: list[str] = []
+
+            if page_number == 0:
+                top_band_bottom = height * 0.34
+                page_parts.append(
+                    extract_pdfplumber_text(page.crop((0, top, width, top_band_bottom)))
+                )
+                top = top_band_bottom
+
+            gutter = width * 0.025
+            left = page.crop((0, top, split_x - gutter, bottom))
+            right = page.crop((split_x + gutter, top, width, bottom))
+            page_parts.extend((extract_pdfplumber_text(left), extract_pdfplumber_text(right)))
+            pages.append(cleanup_pdf_text("\n\n".join(part for part in page_parts if part)))
+
+    markdown = "\n\n".join(page for page in pages if page)
+    if not markdown.strip():
+        raise ValueError("pdfplumber did not extract any text from the PDF.")
+    return markdown
+
+
+def better_markdown(candidate: str, baseline: str) -> bool:
+    return markdown_quality_penalty(candidate) < markdown_quality_penalty(baseline)
 
 
 def convert_auto(job: ConversionJob) -> tuple[str, str]:
     markdown = convert_with_markitdown(job.input_path)
     if is_pdf(job.input_path) and looks_like_broken_pdf_markdown(markdown):
+        fallback_errors: list[str] = []
+        try:
+            repaired = convert_with_pdf_layout_repair(job.input_path)
+            if better_markdown(repaired, markdown):
+                return repaired, "Auto: PDF layout repair"
+            fallback_errors.append("PDF layout repair was not better")
+        except Exception as exc:
+            fallback_errors.append(f"PDF layout repair failed: {exc}")
+
         try:
             return convert_with_docling(job.input_path), "Auto: Docling fallback"
         except Exception as exc:
-            return (
-                markdown,
-                f"Auto: MarkItDown; Docling fallback failed: {exc}",
-            )
+            fallback_errors.append(f"Docling fallback failed: {exc}")
+            return markdown, "Auto: MarkItDown; " + "; ".join(fallback_errors)
     return markdown, "Auto: MarkItDown"
 
 
