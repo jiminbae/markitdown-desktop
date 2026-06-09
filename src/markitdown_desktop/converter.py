@@ -129,7 +129,6 @@ COMMON_PDF_LINE_SPLIT_PREFIXES = {
     "improv",
     "improve",
     "diverg",
-    "in",
     "informa",
     "informatio",
     "mech",
@@ -137,6 +136,7 @@ COMMON_PDF_LINE_SPLIT_PREFIXES = {
     "paramet",
     "repre",
     "seman",
+    "sim",
     "sent",
     "tec",
     "train",
@@ -144,6 +144,19 @@ COMMON_PDF_LINE_SPLIT_PREFIXES = {
 
 VISUAL_NOISE_RE = re.compile(r"(?:\b[A-Za-z]\b\s+){6,}\b[A-Za-z]\b")
 FOOTER_RE = re.compile(r"submitted\s*to.*donotdistribute", re.IGNORECASE)
+PROTECTED_NUMBER_CONTEXTS = {
+    "appendix",
+    "eq",
+    "equ",
+    "equation",
+    "fig",
+    "figure",
+    "lemma",
+    "section",
+    "supp",
+    "table",
+    "theorem",
+}
 
 
 def should_join_pdf_line_number_split(left: str, right: str) -> bool:
@@ -158,19 +171,69 @@ def should_join_pdf_line_number_split(left: str, right: str) -> bool:
     return len(lower_left) <= 3 and len(lower_right) >= 5
 
 
+def has_protected_number_context(left_context: str) -> bool:
+    context = left_context.rstrip().lower()
+    match = re.search(r"([a-z][a-z-]*)\.?$", context)
+    return bool(match and match.group(1) in PROTECTED_NUMBER_CONTEXTS)
+
+
+def has_recent_protected_number_context(left_context: str) -> bool:
+    labels = "|".join(sorted(PROTECTED_NUMBER_CONTEXTS))
+    pattern = rf"\b(?:{labels})\.?\s+\d+(?:\s+(?:and|or)\s*)?$"
+    return bool(re.search(pattern, left_context.rstrip().lower()))
+
+
+def repair_split_word_fragments(line: str) -> str:
+    def replace_fragment(match: re.Match[str]) -> str:
+        left, right = match.groups()
+        if left.lower() in COMMON_PDF_LINE_SPLIT_PREFIXES:
+            return f"{left}{right}"
+        return match.group(0)
+
+    return re.sub(r"\b([A-Za-z]{2,})\s+([a-z]{2,})\b", replace_fragment, line)
+
+
 def remove_embedded_pdf_line_numbers(line: str) -> str:
     def replace_split(match: re.Match[str]) -> str:
         left, _number, right = match.groups()
+        if not left.islower() and left.lower() not in COMMON_PDF_LINE_SPLIT_PREFIXES:
+            return match.group(0)
         separator = "" if should_join_pdf_line_number_split(left, right) else " "
         return f"{left}{separator}{right}"
 
+    def replace_attached_suffix(match: re.Match[str]) -> str:
+        word, _number = match.groups()
+        if not word.islower():
+            return match.group(0)
+        if word in COMMON_PDF_LINE_SPLIT_PREFIXES or len(word) <= 6:
+            return word
+        return match.group(0)
+
+    def remove_standalone_number(match: re.Match[str]) -> str:
+        if has_protected_number_context(line[: match.start("number")]):
+            return match.group(0)
+        return " "
+
+    def remove_function_word_number(match: re.Match[str]) -> str:
+        if has_recent_protected_number_context(line[: match.start("number")]):
+            return match.group(0)
+        return f"{match.group('word')} "
+
     line = re.sub(r"\b([A-Za-z]{2,})(\d{1,4})\s+([a-z]{3,})\b", replace_split, line)
-    line = re.sub(r"\b([A-Za-z]{3,})(\d{1,4})\b", r"\1", line)
-    line = re.sub(r"(?<=[,.;:)\]])\s+[1-9]\d{0,3}\s+(?=[a-z])", " ", line)
-    line = re.sub(r"(?<=[A-Za-z\]\)])\s+[2-9]\d{0,3}\s+(?=[a-z])", " ", line)
+    line = re.sub(r"\b([A-Za-z]{3,})(\d{1,4})\b", replace_attached_suffix, line)
     line = re.sub(
-        r"\b(a|an|as|for|in|of|on|that|the|to|while|with)\s+[1-9]\d{0,3}\s+(?=[a-z])",
-        r"\1 ",
+        r"(?<=\S)\s+(?P<number>[2-9]\d{0,3})\s+(?=[a-z])",
+        remove_standalone_number,
+        line,
+    )
+    line = re.sub(
+        r"(?<=[,;:)\]])\s+(?P<number>[1-9]\d{0,3})\s+(?=[a-z])",
+        remove_standalone_number,
+        line,
+    )
+    line = re.sub(
+        r"\b(?P<word>a|an|as|for|in|of|on|that|the|to|while|with)\s+(?P<number>[1-9]\d{0,3})\s+(?=[a-z])",
+        remove_function_word_number,
         line,
     )
     line = re.sub(
@@ -178,12 +241,12 @@ def remove_embedded_pdf_line_numbers(line: str) -> str:
         r"\1 ",
         line,
     )
-    return line
+    return repair_split_word_fragments(line)
 
 
 def strip_pdf_line_number(line: str) -> str:
     line = re.sub(r"^\s*\d{1,4}\s+(?=\S)", "", line)
-    line = re.sub(r"(?<=\D)\s+\d{1,4}\s*$", "", line)
+    line = re.sub(r"(?<=\D)(?:\s+\d{1,4}){1,2}\s*$", "", line)
     return line.strip()
 
 

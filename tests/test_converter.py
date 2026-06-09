@@ -79,6 +79,7 @@ class ConverterTests(unittest.TestCase):
             "This is paper text",
         )
         self.assertEqual(strip_pdf_line_number("Figure 1: Caption"), "Figure 1: Caption")
+        self.assertEqual(strip_pdf_line_number("Readable sentence. 68 2"), "Readable sentence.")
 
     def test_text_from_pdf_words_groups_by_y_then_x(self) -> None:
         words = [
@@ -122,6 +123,30 @@ class ConverterTests(unittest.TestCase):
         self.assertEqual(
             remove_embedded_pdf_line_numbers("spiking 40 neurons and otherwise 79 equals"),
             "spiking neurons and otherwise equals",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("Fig. 5 and 10 show CIFAR100 with OSTrack256"),
+            "Fig. 5 and 10 show CIFAR100 with OSTrack256",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("Table 3 shows Eq. 10 and Theorem 3.5"),
+            "Table 3 shows Eq. 10 and Theorem 3.5",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("Figure 8 explains Fig.8(a) and ImageNet-1K"),
+            "Figure 8 explains Fig.8(a) and ImageNet-1K",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("com ponents Diverg ing informa tion improve ments"),
+            "components Diverging information improvements",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("In this work, we show in the paper"),
+            "In this work, we show in the paper",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("in10 formation remains useful"),
+            "information remains useful",
         )
 
     def test_cleanup_pdf_text_drops_visual_noise_and_footer_lines(self) -> None:
