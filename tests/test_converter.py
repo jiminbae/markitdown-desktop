@@ -14,7 +14,9 @@ from markitdown_desktop.converter import (
     best_page_candidate,
     better_markdown,
     cleanup_pdf_text,
+    is_pdf_visual_noise_line,
     looks_like_broken_pdf_markdown,
+    remove_embedded_pdf_line_numbers,
     page_candidate_penalty,
     strip_pdf_line_number,
     text_from_pdf_words,
@@ -92,6 +94,63 @@ class ConverterTests(unittest.TestCase):
         clean = "Spiking Transformers merge the representational power"
         self.assertGreater(page_candidate_penalty(mixed), page_candidate_penalty(clean))
         self.assertEqual(best_page_candidate([mixed, clean]), clean)
+
+    def test_page_candidate_penalty_discourages_visual_noise_lines(self) -> None:
+        noisy = "Readable text\nP o s it i ve P o s i ti v e N e g a ti v e"
+        clean = "Readable text\nMore readable paper text"
+        self.assertGreater(page_candidate_penalty(noisy), page_candidate_penalty(clean))
+
+    def test_remove_embedded_pdf_line_numbers_repairs_neurips_line_numbers(self) -> None:
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers(
+                "repre1 sentational power and high2 performance persists 3 versus"
+            ),
+            "representational power and high performance persists versus",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("of17 fering readable text"),
+            "offering readable text",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("activations, 4 we reveal SCA) 8 paradigm"),
+            "activations, we reveal SCA) paradigm",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("which equals 1 for v and 0 otherwise"),
+            "which equals 1 for v and 0 otherwise",
+        )
+        self.assertEqual(
+            remove_embedded_pdf_line_numbers("spiking 40 neurons and otherwise 79 equals"),
+            "spiking neurons and otherwise equals",
+        )
+
+    def test_cleanup_pdf_text_drops_visual_noise_and_footer_lines(self) -> None:
+        text = "\n".join(
+            [
+                "This is readable paper text.",
+                "P o s it i ve P o s i ti v e N e g a ti v e",
+                "Figure 3: Useful caption",
+                "Submittedto40thConferenceonNeuralInformationProcessingSystems(NeurIPS2026). Donotdistribute.",
+                "More readable paper text.",
+            ]
+        )
+        cleaned = cleanup_pdf_text(text)
+        self.assertIn("This is readable paper text.", cleaned)
+        self.assertIn("Figure 3: Useful caption", cleaned)
+        self.assertIn("More readable paper text.", cleaned)
+        self.assertNotIn("P o s it", cleaned)
+        self.assertNotIn("Donotdistribute", cleaned)
+
+    def test_cleanup_pdf_text_trims_visual_noise_after_caption(self) -> None:
+        text = "Figure 1: The description of spectral bias. w i t h S N N c h a r a c t e r s"
+        self.assertEqual(
+            cleanup_pdf_text(text),
+            "Figure 1: The description of spectral bias.",
+        )
+
+    def test_is_pdf_visual_noise_line_keeps_captions(self) -> None:
+        self.assertTrue(is_pdf_visual_noise_line("P o s it i ve P o s i ti v e N e g a ti v e"))
+        self.assertFalse(is_pdf_visual_noise_line("Figure 3: Useful caption"))
 
     def test_cleanup_pdf_text_repairs_common_line_breaks(self) -> None:
         text = "high-\nfrequency\ncomponents\n\nNext paragraph"

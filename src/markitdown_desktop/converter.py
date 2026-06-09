@@ -97,6 +97,7 @@ def markdown_quality_penalty(markdown: str) -> int:
         re.findall(r"\b[a-z]{1,4}\s+\d{1,4}\s+[a-z]{3,}", markdown)
     )
     dangling_fragment_penalty = len(re.findall(r"\b[a-z]\s+[a-z]{5,}", markdown))
+    visual_noise_lines = sum(1 for line in lines if is_pdf_visual_noise_line(line))
 
     return sum(
         (
@@ -106,6 +107,7 @@ def markdown_quality_penalty(markdown: str) -> int:
             table_ratio_penalty,
             embedded_line_number_penalty * 12,
             dangling_fragment_penalty * 3,
+            visual_noise_lines * 15,
         )
     )
 
@@ -114,17 +116,119 @@ def looks_like_broken_pdf_markdown(markdown: str) -> bool:
     return markdown_quality_penalty(markdown) >= 100
 
 
+COMMON_PDF_LINE_SPLIT_PREFIXES = {
+    "archi",
+    "cal",
+    "cate",
+    "com",
+    "compo",
+    "consis",
+    "dynami",
+    "effi",
+    "forma",
+    "improv",
+    "improve",
+    "diverg",
+    "in",
+    "informa",
+    "informatio",
+    "mech",
+    "opera",
+    "paramet",
+    "repre",
+    "seman",
+    "sent",
+    "tec",
+    "train",
+}
+
+VISUAL_NOISE_RE = re.compile(r"(?:\b[A-Za-z]\b\s+){6,}\b[A-Za-z]\b")
+FOOTER_RE = re.compile(r"submitted\s*to.*donotdistribute", re.IGNORECASE)
+
+
+def should_join_pdf_line_number_split(left: str, right: str) -> bool:
+    lower_left = left.lower()
+    lower_right = right.lower()
+    if lower_left in COMMON_PDF_LINE_SPLIT_PREFIXES:
+        return True
+    if lower_left.endswith(("s", "ed", "ing")):
+        return False
+    if lower_left in {"high", "low", "global", "local", "model", "visual"}:
+        return False
+    return len(lower_left) <= 3 and len(lower_right) >= 5
+
+
+def remove_embedded_pdf_line_numbers(line: str) -> str:
+    def replace_split(match: re.Match[str]) -> str:
+        left, _number, right = match.groups()
+        separator = "" if should_join_pdf_line_number_split(left, right) else " "
+        return f"{left}{separator}{right}"
+
+    line = re.sub(r"\b([A-Za-z]{2,})(\d{1,4})\s+([a-z]{3,})\b", replace_split, line)
+    line = re.sub(r"\b([A-Za-z]{3,})(\d{1,4})\b", r"\1", line)
+    line = re.sub(r"(?<=[,.;:)\]])\s+[1-9]\d{0,3}\s+(?=[a-z])", " ", line)
+    line = re.sub(r"(?<=[A-Za-z\]\)])\s+[2-9]\d{0,3}\s+(?=[a-z])", " ", line)
+    line = re.sub(
+        r"\b(a|an|as|for|in|of|on|that|the|to|while|with)\s+[1-9]\d{0,3}\s+(?=[a-z])",
+        r"\1 ",
+        line,
+    )
+    line = re.sub(
+        r"\b([A-Za-z]{4,})\s+[1-9]\d{0,3}\s+(?=(?:and|but|or|that|the|versus|we|when|where|which|while)\b)",
+        r"\1 ",
+        line,
+    )
+    return line
+
+
+def strip_pdf_line_number(line: str) -> str:
+    line = re.sub(r"^\s*\d{1,4}\s+(?=\S)", "", line)
+    line = re.sub(r"(?<=\D)\s+\d{1,4}\s*$", "", line)
+    return line.strip()
+
+
+def is_pdf_visual_noise_line(line: str) -> bool:
+    compact = re.sub(r"\s+", "", line)
+    if FOOTER_RE.search(compact):
+        return True
+    if line.lstrip().startswith(("Figure ", "Table ")):
+        return False
+
+    alpha_tokens = re.findall(r"[A-Za-z]+", line)
+    if not alpha_tokens:
+        return False
+
+    single_letter_tokens = sum(1 for token in alpha_tokens if len(token) == 1)
+    if VISUAL_NOISE_RE.search(line) and single_letter_tokens >= 8:
+        return True
+    if len(alpha_tokens) >= 12 and single_letter_tokens / len(alpha_tokens) > 0.45:
+        return True
+    return False
+
+
 def cleanup_pdf_text(text: str) -> str:
     text = text.replace("\x00", "")
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+
+    cleaned_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"[ \t]+", " ", raw_line).strip()
+        if not line:
+            cleaned_lines.append("")
+            continue
+        line = strip_pdf_line_number(remove_embedded_pdf_line_numbers(line))
+        if line.lstrip().startswith(("Figure ", "Table ")) and VISUAL_NOISE_RE.search(line):
+            first_sentence = re.match(r"(.+?\.)\s+", line)
+            if first_sentence:
+                line = first_sentence.group(1)
+        if line and not is_pdf_visual_noise_line(line):
+            cleaned_lines.append(line)
+
+    text = "\n".join(cleaned_lines)
     text = re.sub(r"(?<!\n)\n(?!\n)(?=[a-z0-9,(])", " ", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
-
-def strip_pdf_line_number(line: str) -> str:
-    return re.sub(r"^\s*\d{1,4}\s+(?=\S)", "", line).strip()
 
 
 def word_value(word: object, key: str, default: object = "") -> object:
@@ -246,7 +350,7 @@ def convert_with_pdf_layout_repair(input_path: Path) -> str:
             if page_text:
                 pages.append(page_text)
 
-    markdown = "\n\n".join(pages)
+    markdown = cleanup_pdf_text("\n\n".join(pages))
     if not markdown.strip():
         raise ValueError("pdfplumber did not extract any text from the PDF.")
     return markdown
