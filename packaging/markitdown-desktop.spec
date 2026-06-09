@@ -1,7 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all
 
+
+project_root = Path(SPECPATH).parent
 
 datas = []
 binaries = []
@@ -35,8 +39,8 @@ for package_name in (
 
 
 a = Analysis(
-    ["packaging/launcher.py"],
-    pathex=["src"],
+    [str(project_root / "packaging" / "launcher.py")],
+    pathex=[str(project_root / "src")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
