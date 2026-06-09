@@ -11,9 +11,13 @@ from markitdown_desktop.converter import (
     convert_job,
     default_output_path,
     extract_markdown,
+    best_page_candidate,
     better_markdown,
     cleanup_pdf_text,
     looks_like_broken_pdf_markdown,
+    page_candidate_penalty,
+    strip_pdf_line_number,
+    text_from_pdf_words,
 )
 
 
@@ -66,6 +70,28 @@ class ConverterTests(unittest.TestCase):
             self.assertIn("Auto: MarkItDown", result.message)
             markitdown.assert_called_once()
             docling.assert_not_called()
+
+    def test_strip_pdf_line_number_removes_neurips_line_numbers(self) -> None:
+        self.assertEqual(
+            strip_pdf_line_number("42 This is paper text"),
+            "This is paper text",
+        )
+        self.assertEqual(strip_pdf_line_number("Figure 1: Caption"), "Figure 1: Caption")
+
+    def test_text_from_pdf_words_groups_by_y_then_x(self) -> None:
+        words = [
+            {"text": "right", "x0": 60, "top": 20},
+            {"text": "1", "x0": 0, "top": 10},
+            {"text": "left", "x0": 20, "top": 10},
+            {"text": "line", "x0": 55, "top": 10},
+        ]
+        self.assertEqual(text_from_pdf_words(words), "left line\nright")
+
+    def test_best_page_candidate_avoids_embedded_line_number_fragments(self) -> None:
+        mixed = "Spiking Transformers merge the e 2 sentational power"
+        clean = "Spiking Transformers merge the representational power"
+        self.assertGreater(page_candidate_penalty(mixed), page_candidate_penalty(clean))
+        self.assertEqual(best_page_candidate([mixed, clean]), clean)
 
     def test_cleanup_pdf_text_repairs_common_line_breaks(self) -> None:
         text = "high-\nfrequency\ncomponents\n\nNext paragraph"

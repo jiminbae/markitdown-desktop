@@ -93,6 +93,10 @@ def markdown_quality_penalty(markdown: str) -> int:
     pipe_lines = sum(1 for line in lines if "|" in line)
     long_no_space_lines = sum(1 for line in lines if len(line) > 60 and " " not in line)
     table_ratio_penalty = int(200 * max(0, pipe_lines / line_count - 0.20))
+    embedded_line_number_penalty = len(
+        re.findall(r"\b[a-z]{1,4}\s+\d{1,4}\s+[a-z]{3,}", markdown)
+    )
+    dangling_fragment_penalty = len(re.findall(r"\b[a-z]\s+[a-z]{5,}", markdown))
 
     return sum(
         (
@@ -100,6 +104,8 @@ def markdown_quality_penalty(markdown: str) -> int:
             markdown.count("(cid:") * 25,
             long_no_space_lines * 8,
             table_ratio_penalty,
+            embedded_line_number_penalty * 12,
+            dangling_fragment_penalty * 3,
         )
     )
 
@@ -117,13 +123,117 @@ def cleanup_pdf_text(text: str) -> str:
     return text.strip()
 
 
+def strip_pdf_line_number(line: str) -> str:
+    return re.sub(r"^\s*\d{1,4}\s+(?=\S)", "", line).strip()
+
+
+def word_value(word: object, key: str, default: object = "") -> object:
+    if isinstance(word, dict):
+        return word.get(key, default)
+    return getattr(word, key, default)
+
+
+def text_from_pdf_words(words: list[object], y_tolerance: float = 3.0) -> str:
+    if not words:
+        return ""
+
+    sorted_words = sorted(
+        words,
+        key=lambda word: (
+            round(float(word_value(word, "top", 0.0)) / y_tolerance),
+            float(word_value(word, "x0", 0.0)),
+        ),
+    )
+    lines: list[list[object]] = []
+
+    for word in sorted_words:
+        top = float(word_value(word, "top", 0.0))
+        if not lines:
+            lines.append([word])
+            continue
+
+        line_top = float(word_value(lines[-1][0], "top", 0.0))
+        if abs(top - line_top) <= y_tolerance:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+
+    text_lines: list[str] = []
+    for line_words in lines:
+        line = " ".join(
+            str(word_value(word, "text", ""))
+            for word in sorted(line_words, key=lambda word: float(word_value(word, "x0", 0.0)))
+        )
+        line = strip_pdf_line_number(line)
+        if line:
+            text_lines.append(line)
+    return "\n".join(text_lines)
+
+
 def extract_pdfplumber_text(page: object) -> str:
-    return page.extract_text(  # type: ignore[attr-defined]
+    words = page.extract_words(  # type: ignore[attr-defined]
         x_tolerance=2,
-        x_tolerance_ratio=0.18,
         y_tolerance=4,
-        layout=False,
-    ) or ""
+        keep_blank_chars=False,
+        use_text_flow=False,
+    )
+    return text_from_pdf_words(words)
+
+
+def extract_full_width_page(page: object, top: float, bottom: float) -> str:
+    return extract_pdfplumber_text(page.crop((0, top, float(page.width), bottom)))
+
+
+def extract_two_column_page(page: object, top: float, bottom: float) -> str:
+    width = float(page.width)
+    split_x = width / 2
+    gutter = width * 0.025
+    left = page.crop((0, top, split_x - gutter, bottom))
+    right = page.crop((split_x + gutter, top, width, bottom))
+    return "\n\n".join(
+        part for part in (extract_pdfplumber_text(left), extract_pdfplumber_text(right)) if part
+    )
+
+
+def page_candidate_penalty(text: str) -> int:
+    penalty = markdown_quality_penalty(text)
+    penalty += len(re.findall(r"\b[a-z]{1,4}\s+\d{1,4}\s+[a-z]{3,}", text)) * 20
+    penalty += len(re.findall(r"\b(?:e|t|o|n|s|r)\s+[a-z]{5,}", text)) * 8
+    return penalty
+
+
+def best_page_candidate(candidates: list[str]) -> str:
+    cleaned = [cleanup_pdf_text(candidate) for candidate in candidates if candidate.strip()]
+    if not cleaned:
+        return ""
+    return min(cleaned, key=page_candidate_penalty)
+
+
+def extract_pdfplumber_page(page: object, page_number: int) -> str:
+    height = float(page.height)
+    top = height * 0.08
+    bottom = height * 0.94
+
+    candidates = [
+        extract_full_width_page(page, top, bottom),
+        extract_two_column_page(page, top, bottom),
+    ]
+
+    if page_number == 0:
+        for title_ratio in (0.16, 0.22, 0.28, 0.34):
+            title_bottom = height * title_ratio
+            candidates.append(
+                "\n\n".join(
+                    part
+                    for part in (
+                        extract_full_width_page(page, top, title_bottom),
+                        extract_two_column_page(page, title_bottom, bottom),
+                    )
+                    if part
+                )
+            )
+
+    return best_page_candidate(candidates)
 
 
 def convert_with_pdf_layout_repair(input_path: Path) -> str:
@@ -132,27 +242,11 @@ def convert_with_pdf_layout_repair(input_path: Path) -> str:
     pages: list[str] = []
     with pdfplumber.open(str(input_path)) as pdf:
         for page_number, page in enumerate(pdf.pages):
-            width = float(page.width)
-            height = float(page.height)
-            split_x = width / 2
-            top = height * 0.08
-            bottom = height * 0.94
-            page_parts: list[str] = []
+            page_text = extract_pdfplumber_page(page, page_number)
+            if page_text:
+                pages.append(page_text)
 
-            if page_number == 0:
-                top_band_bottom = height * 0.34
-                page_parts.append(
-                    extract_pdfplumber_text(page.crop((0, top, width, top_band_bottom)))
-                )
-                top = top_band_bottom
-
-            gutter = width * 0.025
-            left = page.crop((0, top, split_x - gutter, bottom))
-            right = page.crop((split_x + gutter, top, width, bottom))
-            page_parts.extend((extract_pdfplumber_text(left), extract_pdfplumber_text(right)))
-            pages.append(cleanup_pdf_text("\n\n".join(part for part in page_parts if part)))
-
-    markdown = "\n\n".join(page for page in pages if page)
+    markdown = "\n\n".join(pages)
     if not markdown.strip():
         raise ValueError("pdfplumber did not extract any text from the PDF.")
     return markdown
