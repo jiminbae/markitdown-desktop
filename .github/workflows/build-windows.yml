@@ -45,7 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MarkItDown-Desktop-Windows
-          path: MarkItDown-Desktop-Windows.zip
+          path: "dist/MarkItDown Desktop"
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
